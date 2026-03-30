@@ -1,5 +1,29 @@
 {
-  "_comment": "REPLACE THIS with the real google-services.json from Firebase Console.",
-  "_comment2": "If you do not want Firebase/FCM push notifications, remove the googleServicesFile line from app.json and delete this file.",
-  "_comment3": "Without a real google-services.json the APK will still build but push notifications will not work on device."
+  "project_info": {
+    "project_number": "648786831182",
+    "project_id": "rss-feed-and-read",
+    "storage_bucket": "rss-feed-and-read.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:648786831182:android:bd74300740794525b1201f",
+        "android_client_info": {
+          "package_name": "com.RSSFeadAndRead.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCqJyatM56Zt7CdyrMR05dqQ0kcBTvzBA0"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
 }
