@@ -1,0 +1,27 @@
+{
+  "name": "RoyalRoadReaderRewrite",
+  "version": "1.0.0",
+  "main": "App.js",
+  "scripts": {
+    "start": "expo start",
+    "android": "expo run:android",
+    "build:apk": "eas build --platform android --profile preview --non-interactive"
+  },
+  "dependencies": {
+    "@react-native-async-storage/async-storage": "^2.1.0",
+    "expo": "~55.0.0",
+    "expo-background-fetch": "~13.1.0",
+    "expo-document-picker": "~55.0.0",
+    "expo-file-system": "~55.0.0",
+    "expo-navigation-bar": "~55.0.0",
+    "expo-notifications": "~55.0.0",
+    "expo-sharing": "~55.0.0",
+    "expo-task-manager": "~12.1.0",
+    "react": "19.0.0",
+    "react-native": "0.79.2",
+    "react-native-webview": "13.13.5"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.25.0"
+  }
+}

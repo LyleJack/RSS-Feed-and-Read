@@ -1,0 +1,41 @@
+name: Build RoyalRoadReaderRewrite APK
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:          # allow manual trigger from GitHub UI
+
+jobs:
+  build:
+    name: Build Android APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Install EAS CLI
+        run: npm install -g eas-cli
+
+      - name: Build APK via EAS
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: eas build --platform android --profile preview --non-interactive
+
+      # Optional: download the APK and attach it as a workflow artifact
+      # so you can grab it directly from the GitHub Actions run page
+      - name: Get APK download URL
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          eas build:list --platform android --limit 1 --json | \
+            python3 -c "import sys,json; b=json.load(sys.stdin)[0]; print('APK URL:', b.get('artifacts',{}).get('buildUrl','not found yet'))"
