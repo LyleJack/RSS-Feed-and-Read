@@ -1,0 +1,49 @@
+{
+  "expo": {
+    "name": "RoyalRoadReaderRewrite",
+    "slug": "RoyalRoadReaderRewrite",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "splash": {
+      "backgroundColor": "#0F0E0C"
+    },
+    "android": {
+      "package": "com.RoyalRoadReaderRewrite.app",
+      "versionCode": 1,
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundColor": "#0F0E0C"
+      },
+      "permissions": [
+        "android.permission.INTERNET",
+        "android.permission.RECEIVE_BOOT_COMPLETED",
+        "android.permission.WAKE_LOCK",
+        "android.permission.VIBRATE",
+        "android.permission.POST_NOTIFICATIONS"
+      ],
+      "googleServicesFile": "./google-services.json"
+    },
+    "plugins": [
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/android-icon-monochrome.png", // should be notification icon, but none exist atm
+          "color": "#E07040",
+          "defaultChannel": "default",
+          "sounds": []
+        }
+      ],
+      [
+        "expo-background-fetch"
+      ],
+      "expo-task-manager"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "36d626b5-9782-4089-9cc8-5cd1973fcaea"
+      }
+    }
+  }
+}
