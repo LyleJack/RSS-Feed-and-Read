@@ -44,6 +44,9 @@
       "eas": {
         "projectId": "36d626b5-9782-4089-9cc8-5cd1973fcaea"
       }
+    },
+    "ios": {
+      "bundleIdentifier": "com.RoyalRoadReaderRewrite.app"
     }
   }
 }
