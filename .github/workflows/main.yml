@@ -9,36 +9,24 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
-  build:
-    name: Build Android APK
+   build:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+      - uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: 'npm'
-
-      - name: Install dependencies
-        run: npm install
-
-      - name: Install EAS CLI
-        run: npm install -g eas-cli
-
-      - name: Build APK via EAS
-        env:
-          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
-        run: eas build --platform android --profile preview --non-interactive
-
-      # Optional: download the APK and attach it as a workflow artifact
-      # so you can grab it directly from the GitHub Actions run page
-      - name: Get APK download URL
-        env:
-          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
-        run: |
-          eas build:list --platform android --limit 1 --json | \
-            python3 -c "import sys,json; b=json.load(sys.stdin)[0]; print('APK URL:', b.get('artifacts',{}).get('buildUrl','not found yet'))"
+      - run: npm install --legacy-peer-deps
+      - run : npm install expo
+      - run: npx expo prebuild --platform android --clean
+      - run: cd android && ./gradlew assembleRelease
+      - name: Find APK
+        run: find android/app/build/outputs/apk -name "*.apk" | tee apk-paths.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: RSS-Feed-Reader-APK
+          path: android/app/build/outputs/apk/release/

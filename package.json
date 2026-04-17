@@ -4,7 +4,7 @@
   "main": "index.js",
   "scripts": {
     "start": "react-native start",
-    "android": "react-native run-android",
+    "android": "expo run:android",
     "android:release": "react-native run-android --mode=release"
   },
   "dependencies": {
@@ -12,6 +12,7 @@
     "@react-native-async-storage/async-storage": "^1.24.0",
     "@react-native-firebase/app": "^21.14.0",
     "@react-native-firebase/messaging": "^21.14.0",
+    "expo-background-fetch": "^55.0.14",
     "expo-notifications": "^55.0.19",
     "react": "19.0.0",
     "react-native": "0.79.2",
@@ -20,7 +21,8 @@
     "react-native-fs": "^2.20.0",
     "react-native-navigation-bar-color": "^2.0.2",
     "react-native-share": "^10.2.1",
-    "react-native-webview": "13.13.5"
+    "react-native-webview": "13.13.5",
+    "expo": "~55.0.15"
   },
   "devDependencies": {
     "@babel/core": "^7.25.0",
