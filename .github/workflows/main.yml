@@ -21,6 +21,7 @@ jobs:
         with:
           node-version: '20'
       - run: npm install --legacy-peer-deps
+      - run : npm install expo
       - run: npx expo prebuild --platform android --clean
       - run: cd android && ./gradlew assembleRelease
       - name: Find APK
