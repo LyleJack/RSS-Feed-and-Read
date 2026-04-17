@@ -8,10 +8,8 @@
     "android:release": "cd android && ./gradlew assembleRelease"
   },
   "dependencies": {
-    "@notifee/react-native": "^9.1.8",
     "@react-native-async-storage/async-storage": "^1.24.0",
     "@react-native-firebase/app": "^21.14.0",
-    "@react-native-firebase/messaging": "^21.14.0",
     "expo": "~55.0.15",
     "expo-background-fetch": "^55.0.14",
     "expo-document-picker": "~55.0.13",
@@ -23,10 +21,6 @@
     "expo-task-manager": "~55.0.14",
     "react": "19.2.0",
     "react-native": "0.83.4",
-    "react-native-background-fetch": "^4.2.7",
-    "react-native-document-picker": "^9.3.1",
-    "react-native-fs": "^2.20.0",
-    "react-native-share": "^10.2.1",
     "react-native-webview": "13.16.0"
   },
   "devDependencies": {
