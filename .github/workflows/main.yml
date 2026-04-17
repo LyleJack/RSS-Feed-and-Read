@@ -5,6 +5,9 @@ on:
     branches: [main]
   workflow_dispatch:          # allow manual trigger from GitHub UI
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   build:
     name: Build Android APK
