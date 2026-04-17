@@ -38,7 +38,8 @@
       [
         "expo-background-fetch"
       ],
-      "expo-task-manager"
+      "expo-task-manager",
+      "expo-sharing"
     ],
     "extra": {
       "eas": {

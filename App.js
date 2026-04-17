@@ -718,7 +718,6 @@ export default function App() {
             trueBlack={trueBlack} setTrueBlack={setTrueBlack}
             onSaveSettings={saveSettings}
             onOpenRRBrowser={() => setShowRRBrowser(true)}
-            onImport={() => setShowImport(true)} onExport={exportOPML}
           />
         )}
       </View>
