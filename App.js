@@ -148,6 +148,75 @@ function parseRSS(xml, feedId, feedTitle) {
   return articles;
 }
 
+function looksLikeFeedXml(text) {
+  if (!text) return false;
+  const t = text.trimStart().toLowerCase();
+  if (t.startsWith('{') || t.startsWith('[')) return false;
+  return (
+    t.includes('<rss') ||
+    t.includes('<feed') ||
+    t.includes('<rdf:rdf') ||
+    t.includes('<channel') ||
+    t.includes('<item') ||
+    t.includes('<entry')
+  );
+}
+
+function buildFeedRequestUrls(feedUrl) {
+  const encoded = encodeURIComponent(feedUrl);
+  return [
+    feedUrl,
+    'https://api.allorigins.win/raw?url=' + encoded + '&_=' + Date.now(),
+    'https://corsproxy.io/?' + encoded,
+  ];
+}
+
+async function fetchTextWithTimeout(url, ms) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), ms);
+  try {
+    const res = await fetch(url, {
+      signal: ctrl.signal,
+      headers: { Accept: 'application/rss+xml, application/atom+xml, application/xml, text/xml, */*' },
+    });
+    if (!res.ok) throw new Error('http ' + res.status);
+    return await res.text();
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function fetchFeedXml(feedUrl, timeoutMs = 10000) {
+  let bestText = '';
+  let bestScore = -1;
+  let lastError = null;
+
+  for (const url of buildFeedRequestUrls(feedUrl)) {
+    try {
+      const text = await fetchTextWithTimeout(url, timeoutMs);
+      if (!looksLikeFeedXml(text)) throw new Error('not rss');
+      const score = (text.match(/<(?:item|entry)\b/gi) || []).length;
+      if (score > bestScore) {
+        bestScore = score;
+        bestText = text;
+      }
+      // Prefer the direct feed URL when it already looks good.
+      if (url === feedUrl && score > 0) return text;
+    } catch (e) {
+      lastError = e;
+    }
+  }
+
+  if (bestText) return bestText;
+  throw lastError || new Error('Could not fetch feed');
+}
+
+async function fetchFeedItems(feed, timeoutMs = 10000) {
+  if (feed.paused) return [];
+  const xml = await fetchFeedXml(feed.url, timeoutMs);
+  return parseRSS(xml, feed.id, feed.title);
+}
+
 // ============================================================
 // STORAGE
 // ============================================================
@@ -217,21 +286,16 @@ try {
       const merged = [...articles];
       for (const feed of feeds) {
         if (feed.paused) continue;
-        for (const proxy of ['https://api.allorigins.win/raw?url=','https://corsproxy.io/?']) {
-          try {
-            const res = await fetch(proxy + encodeURIComponent(feed.url));
-            const text = await res.text();
-            if (!text || text.length < 200 || (!text.includes('<item') && !text.includes('<entry'))) continue;
-            // Simple parse — extract guids to find new items
-            const guidRe = /<guid[^>]*>([^<]+)<\/guid>/gi;
-            let m;
-            while ((m = guidRe.exec(text)) !== null) {
-              const guid = feed.id + '_' + m[1].trim().slice(0, 80);
-              if (!merged.find(a => a.id === guid)) newCount++;
-            }
-            break;
-          } catch {}
-        }
+        try {
+          const fresh = await fetchFeedItems(feed, 10000);
+          for (const a of fresh) {
+            const exists = merged.find(x =>
+              x.id === a.id ||
+              (x.feedId === a.feedId && x.link && a.link && x.link === a.link)
+            );
+            if (!exists) newCount++;
+          }
+        } catch {}
       }
 
       if (newCount > 0) {
@@ -416,41 +480,7 @@ export default function App() {
   const updateInterval    = ms  => { setCheckInterval(ms); saveSettings({ checkInterval: ms }); };
 
   const fetchFeed = async (feed) => {
-    if (feed.paused) return [];
-    const proxies = [
-      'https://api.allorigins.win/raw?url=',
-      'https://corsproxy.io/?',
-    ];
-    const fetchWithTimeout = (url, ms) => {
-      const ctrl = new AbortController();
-      const timer = setTimeout(() => ctrl.abort(), ms);
-      return fetch(url, { signal: ctrl.signal }).finally(() => clearTimeout(timer));
-    };
-    const validate = t => {
-      if (!t || t.length < 200) throw new Error('too short');
-      // Reject JSON error responses
-      const trimmed = t.trimStart();
-      if (trimmed.startsWith('{') || trimmed.startsWith('[')) throw new Error('json');
-      // Must contain RSS/Atom items
-      if (!t.includes('<item') && !t.includes('<entry')) throw new Error('not rss');
-      return t;
-    };
-    // Fetch all proxies in parallel with cache-bust; use whichever returns the most items
-    const bustUrl = feed.url + (feed.url.includes('?') ? '&' : '?') + '_=' + Date.now();
-    const results = await Promise.allSettled(
-      proxies.map(proxy =>
-        fetchWithTimeout(proxy + encodeURIComponent(bustUrl), 10000)
-          .then(r => r.text())
-          .then(validate)
-          .then(text => parseRSS(text, feed.id, feed.title))
-      )
-    );
-    // Pick the result with the most items
-    let best = [];
-    for (const r of results) {
-      if (r.status === 'fulfilled' && r.value.length > best.length) best = r.value;
-    }
-    return best;
+    return fetchFeedItems(feed, 10000);
   };
 
   const doRefresh = async (feedList, silent) => {
@@ -2007,37 +2037,17 @@ function AddFeedModal({ visible, th, styles, cats, onClose, onAdd, onAddArticle,
 
   const fetchLatestChapter = async (feed) => {
     setFetching(true);
-    const proxies = ['https://api.allorigins.win/raw?url=', 'https://corsproxy.io/?'];
-    const bust = feed.url + (feed.url.includes('?') ? '&' : '?') + '_=' + Date.now();
     let bestItems = [];
-    await Promise.allSettled(proxies.map(async p => {
-      try {
-        const ctrl = new AbortController();
-        const t = setTimeout(() => ctrl.abort(), 10000);
-        const res = await fetch(p + encodeURIComponent(bust), { signal: ctrl.signal });
-        clearTimeout(t);
-        const text = await res.text();
-        if (!text.includes('<item') && !text.includes('<entry')) return;
-        // Extract items
-        const itemRe = /<(?:item|entry)[^>]*>([\s\S]*?)<\/(?:item|entry)>/gi;
-        let m; const items = [];
-        while ((m = itemRe.exec(text)) !== null) {
-          const it = m[1];
-          const linkM = it.match(/<link[^>]*href="([^"]+)"/) || it.match(/<link[^>]*>([^<]+)<\/link>/);
-          const titleM = it.match(/<title[^>]*>(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?<\/title>/i);
-          const dateM = it.match(/<pubDate[^>]*>([\s\S]*?)<\/pubDate>/i) || it.match(/<published[^>]*>([\s\S]*?)<\/published>/i);
-          if (linkM) items.push({ link: linkM[1].trim(), title: titleM ? titleM[1].trim() : '', date: dateM ? new Date(dateM[1].trim()) : new Date() });
-        }
-        if (items.length > bestItems.length) bestItems = items;
-      } catch {}
-    }));
+    try {
+      bestItems = await fetchFeedItems(feed, 10000);
+    } catch {}
     setFetching(false);
     if (!bestItems.length) {
       showModal && showModal('No Data', 'Could not fetch the RSS feed. Check your connection.', [{ text: 'OK' }], '⚠️');
       return;
     }
     // Sort by date descending — latest first
-    bestItems.sort((a,b) => b.date - a.date);
+    bestItems.sort((a,b) => (b.pubDate || 0) - (a.pubDate || 0));
     const latest = bestItems[0];
     // Check if already in articles
     const existing = (articles || []).find(a => a.feedId === feed.id && a.link === latest.link);
@@ -2045,7 +2055,11 @@ function AddFeedModal({ visible, th, styles, cats, onClose, onAdd, onAddArticle,
       showModal && showModal('Already up to date', '"' + (latest.title || latest.link) + '" is already in your list.', [{ text: 'OK' }], '✓');
     } else {
       // Add it
-      onAddArticle && onAddArticle(feed.id, latest);
+      onAddArticle && onAddArticle(feed.id, {
+        link: latest.link,
+        title: latest.title,
+        date: latest.pubDate ? new Date(latest.pubDate) : new Date(),
+      });
       showModal && showModal('Chapter added', '"' + (latest.title || 'Latest chapter') + '" has been added to ' + feed.title + '.', [{ text: 'OK' }], '✓');
     }
   };
@@ -2082,20 +2096,11 @@ function AddFeedModal({ visible, th, styles, cats, onClose, onAdd, onAddArticle,
     } catch {}
     setAutoFetch(true);
     try {
-      const proxies = ['https://api.allorigins.win/raw?url=', 'https://corsproxy.io/?'];
-      for (const p of proxies) {
-        try {
-          const ctrl = new AbortController();
-          const t = setTimeout(() => ctrl.abort(), 8000);
-          const res = await fetch(p + encodeURIComponent(clean), { signal: ctrl.signal });
-          clearTimeout(t);
-          const text = await res.text();
-          const m = text.match(/<title[^>]*>([^<]{2,120})<\/title>/i)
-                 || text.match(/<channel[^>]*>[\s\S]*?<title[^>]*><!\[CDATA\[([^\]]+)\]\]><\/title>/i)
-                 || text.match(/<channel[^>]*>[\s\S]*?<title[^>]*>([^<]{2,120})<\/title>/i);
-          if (m && m[1]) { setTitle(m[1].trim().replace(/\s*RSS\s*$/i,'').trim()); break; }
-        } catch {}
-      }
+      const text = await fetchFeedXml(clean, 8000);
+      const m = text.match(/<title[^>]*>([^<]{2,120})<\/title>/i)
+             || text.match(/<channel[^>]*>[\s\S]*?<title[^>]*><!\[CDATA\[([^\]]+)\]\]><\/title>/i)
+             || text.match(/<channel[^>]*>[\s\S]*?<title[^>]*>([^<]{2,120})<\/title>/i);
+      if (m && m[1]) setTitle(m[1].trim().replace(/\s*RSS\s*$/i,'').trim());
     } catch {}
     setAutoFetch(false);
   };
@@ -2362,8 +2367,7 @@ function RoyalRoadBrowser({ th, styles, sbTop, onClose, feeds }) {
     setLoading(true); setChapters([]);
     try {
       const rssUrl = selectedFeed.url.startsWith('http') ? selectedFeed.url : 'https://' + selectedFeed.url;
-      const res    = await fetch('https://api.allorigins.win/raw?url=' + encodeURIComponent(rssUrl));
-      const xml    = await res.text();
+      const xml    = await fetchFeedXml(rssUrl, 10000);
       const list   = parseRSSChapters(xml);
       if (!list.length) Alert.alert('No chapters found', 'Could not parse chapters from this RSS feed.');
       setChapters(list);
