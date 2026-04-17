@@ -1,4 +1,4 @@
-// RoyalRoadReaderRewrite — RSS reader with Royal Road support
+// RoyalRoadReader — RSS reader with Royal Road support
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   StyleSheet, Text, View, TouchableOpacity, FlatList, TextInput,
@@ -96,7 +96,7 @@ function generateOPML(feeds, cats) {
     ).join('\n');
     return '    <outline text="' + esc(cat) + '" title="' + esc(cat) + '">\n' + rows + '\n    </outline>';
   }).filter(Boolean).join('\n');
-  return '<?xml version="1.0" encoding="UTF-8"?>\n<opml version="1.1">\n  <head>\n    <title>RoyalRoadReaderRewrite Feed Export</title>\n    <dateCreated>' + now + '</dateCreated>\n    <ownerName>RoyalRoadReaderRewrite</ownerName>\n  </head>\n  <body>\n' + body + '\n  </body>\n</opml>';
+  return '<?xml version="1.0" encoding="UTF-8"?>\n<opml version="1.1">\n  <head>\n    <title>RSS Feed Export</title>\n    <dateCreated>' + now + '</dateCreated>\n    <ownerName>RoyalRoadReaderRSS</ownerName>\n  </head>\n  <body>\n' + body + '\n  </body>\n</opml>';
 }
 
 // ============================================================
@@ -156,7 +156,7 @@ function parseRSS(xml, feedId, feedTitle) {
 // Registers a background task that runs every ~15min even when app is closed
 // This only works in a real APK build (EAS Build), not in Expo Go
 // ============================================================
-const BG_TASK = 'RoyalRoadReaderRewrite_BG_REFRESH';
+const BG_TASK = 'ROYALROADREADER_BG_REFRESH';
 
 async function registerBackgroundFetch() {
   try {
@@ -237,7 +237,7 @@ try {
       if (newCount > 0) {
         await Notifications.scheduleNotificationAsync({
           content: {
-            title: 'RoyalRoadReaderRewrite',
+            title: 'RoyalRoadReader',
             body: newCount + ' new chapter' + (newCount > 1 ? 's' : '') + ' available',
             data: { screen: 'articles' },
           },
@@ -454,40 +454,40 @@ export default function App() {
   };
 
   const doRefresh = async (feedList, silent) => {
-    // Fetch all feeds in parallel for speed; fetchFeed handles proxy fallback internally
     const results = await Promise.all(feedList.map(feed => fetchFeed(feed)));
-    const fresh   = results.flat();
-    let newCount  = 0;
-    const newTitles = [];
-    setArticles(prev => {
-      const merged = [...prev];
-      for (const a of fresh) {
-        // Dedup by id OR by (feedId+link) since some feeds generate different ids each fetch
-        // Check by new id, old id format (first 80 chars), and link URL
-        const oldId = a.feedId + '_' + (a.link || '').slice(0, 80);
-        const dup = merged.find(x =>
-          x.id === a.id ||
-          x.id === oldId ||
-          (x.feedId === a.feedId && x.link && a.link && x.link === a.link)
-        );
-        if (!dup) {
-          merged.unshift(a);
-          newCount++;
-          if (!newTitles.includes(a.feedTitle)) newTitles.push(a.feedTitle);
-        }
+    const fresh = results.flat();
+
+    // Compute new articles BEFORE calling setArticles, so we don't mutate inside updater
+    // (React 18 can re-run updaters; mutations inside are unreliable)
+    const articlesSnapshot = await Store.get(KEYS.ARTICLES) || [];
+    const newItems = [];
+    for (const a of fresh) {
+      const oldId = a.feedId + '_' + (a.link || '').slice(0, 80);
+      const dup = articlesSnapshot.find(x =>
+        x.id === a.id ||
+        x.id === oldId ||
+        (x.feedId === a.feedId && x.link && a.link && x.link === a.link)
+      );
+      if (!dup) newItems.push(a);
+    }
+
+    if (newItems.length > 0) {
+      const merged = [...newItems, ...articlesSnapshot].sort((a, b) => (b.pubDate||0) - (a.pubDate||0));
+      await Store.set(KEYS.ARTICLES, merged);
+      setArticles(merged);
+      if (silent) {
+        const titles = [...new Set(newItems.map(a => a.feedTitle))];
+        setNewBanner({ count: newItems.length, titles });
       }
-      const sorted = merged.sort((a, b) => b.pubDate - a.pubDate);
-      Store.set(KEYS.ARTICLES, sorted);
-      return sorted;
-    });
-    if (silent && newCount > 0) setNewBanner({ count: newCount, titles: newTitles });
+    }
+
     const now = Date.now();
     setLastChecked(now);
     saveSettings({ lastChecked: now });
   };
 
   const refreshSmart = async fid => {
-    if (!feeds.length) return;
+    if (!feeds.length) { setRefreshing(false); return; }
     setRefreshing(true);
     const list = fid ? feeds.filter(f => f.id === fid) : feeds;
     try {
@@ -495,8 +495,11 @@ export default function App() {
         doRefresh(list.length ? list : feeds, false),
         new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 30000)),
       ]);
-    } catch {}
-    setRefreshing(false);
+    } catch (e) {
+      console.warn('Refresh error/timeout:', e.message);
+    } finally {
+      setRefreshing(false);
+    }
   };
 
   const addFeed = async (url, title, category) => {
@@ -530,7 +533,7 @@ export default function App() {
 
   const exportOPML = async () => {
     if (!feeds.length) { Alert.alert('Nothing to Export', 'Add some feeds first.'); return; }
-    try { await Share.share({ title: 'RoyalRoadReaderRewrite Feeds.opml', message: generateOPML(feeds, cats) }); }
+    try { await Share.share({ title: 'RoyalRoadReader Feeds.opml', message: generateOPML(feeds, cats) }); }
     catch (e) { Alert.alert('Export Error', e.message); }
   };
 
@@ -642,7 +645,7 @@ export default function App() {
 
       <View style={[styles.header, { backgroundColor: th.header, borderBottomColor: th.border }]}>
         <Text style={[styles.headerTitle, { color: th.text }]}>
-          {tab === 'feeds' ? 'RoyalRoadReaderRewrite' : tab === 'articles' ? 'Articles' : tab === 'bookmarks' ? 'Bookmarks' : tab === 'offline' ? 'Offline' : 'Settings'}
+          {tab === 'feeds' ? 'RoyalRoadReader' : tab === 'articles' ? 'Articles' : tab === 'bookmarks' ? 'Bookmarks' : tab === 'offline' ? 'Offline' : 'Settings'}
         </Text>
         <View style={{ flexDirection: 'row', gap: 8 }}>
           {tab === 'feeds'    && <TouchableOpacity onPress={() => setShowAddFeed(true)} style={[styles.pill, { backgroundColor: th.accent }]}><Text style={{ color: '#fff', fontWeight: '700', fontSize: 12 }}>+ Feed</Text></TouchableOpacity>}
@@ -708,6 +711,7 @@ export default function App() {
           <SettingsScreen
             th={th} styles={styles} dark={dark} onToggleDark={toggleDark}
             cats={cats} onSaveCats={saveCats} feeds={feeds} articles={articles}
+            onImport={() => setShowImport(true)} onExport={exportOPML}
             autoRefresh={autoRefresh} onToggleAutoRefresh={toggleAutoRefresh}
             checkInterval={checkInterval} onSetInterval={updateInterval}
             lastChecked={lastChecked} showModal={showModal}
@@ -738,9 +742,11 @@ export default function App() {
       </View>
 
       {getModalEl(th)}
-      <AddFeedModal    visible={showAddFeed} th={th} styles={styles} cats={cats} onClose={() => setShowAddFeed(false)}
+      <AddFeedModal visible={showAddFeed} th={th} styles={styles} cats={cats}
+        onClose={() => setShowAddFeed(false)}
         feeds={feeds} articles={articles} showModal={showModal}
-        onAdd={Object.assign(addFeed, { __addArticle: (feedId, item) => {
+        onAdd={addFeed}
+        onAddArticle={(feedId, item) => {
           const feed = feeds.find(f => f.id === feedId);
           if (!feed) return;
           const newArt = {
@@ -751,8 +757,14 @@ export default function App() {
             pubDate: item.date ? item.date.getTime() : Date.now(),
             read: false, bookmarked: false, savedOffline: false,
           };
-          setArticles(prev => { const u = [newArt, ...prev.filter(a => a.link !== item.link)].sort((a,b) => (b.pubDate||0)-(a.pubDate||0)); Store.set(KEYS.ARTICLES, u); return u; });
-        }})} />
+          setArticles(prev => {
+            const u = [newArt, ...prev.filter(a => a.link !== item.link)]
+              .sort((a,b) => (b.pubDate||0)-(a.pubDate||0));
+            Store.set(KEYS.ARTICLES, u);
+            return u;
+          });
+        }}
+      />
       <ImportOPMLModal visible={showImport}  th={th} styles={styles} onClose={() => setShowImport(false)} onImport={importOPML} />
     </View>
   );
@@ -1933,7 +1945,7 @@ function SettingsScreen({ th, styles, dark, onToggleDark, cats, onSaveCats, feed
       <View style={{ backgroundColor: th.accentBg, borderWidth: 1, borderColor: th.accent, borderRadius: 11, padding: 14, marginBottom: 4 }}>
         <Text style={{ color: th.accent, fontWeight: '700', fontSize: 13, marginBottom: 4 }}>Push notifications coming soon</Text>
         <Text style={{ color: th.textMuted, fontSize: 12, lineHeight: 18 }}>
-          Once RoyalRoadReaderRewrite is built as a real app (not Expo Snack), background checks will run even when the app is closed and will send a notification to your phone when new chapters arrive — just like Flym.
+          Once RoyalRoadReader is built as a real app (not Expo Snack), background checks will run even when the app is closed and will send a notification to your phone when new chapters arrive — just like Flym.
         </Text>
       </View>
 
@@ -1970,7 +1982,7 @@ function SettingsScreen({ th, styles, dark, onToggleDark, cats, onSaveCats, feed
       ))}
 
       <Text style={[styles.sLabel, { color: th.textSub, marginTop: 20 }]}>ABOUT</Text>
-      {[['App','RoyalRoadReaderRewrite'],['Version','1.2.0'],['Based on','Flym by FredJul (MIT)'],['Built with','Expo / React Native']].map(([k, v]) => (
+      {[['App','RoyalRoadReader'],['Version','1.2.0'],['Based on','Flym by FredJul (MIT)'],['Built with','Expo / React Native']].map(([k, v]) => (
         <View key={k} style={[styles.row, { backgroundColor: th.card, borderColor: th.border }]}>
           <Text style={[styles.rowLabel, { color: th.text }]}>{k}</Text>
           <Text style={{ color: th.textMuted, fontSize: 13 }}>{v}</Text>
@@ -1983,7 +1995,7 @@ function SettingsScreen({ th, styles, dark, onToggleDark, cats, onSaveCats, feed
 // ============================================================
 // ADD FEED MODAL
 // ============================================================
-function AddFeedModal({ visible, th, styles, cats, onClose, onAdd, feeds, articles, showModal }) {
+function AddFeedModal({ visible, th, styles, cats, onClose, onAdd, onAddArticle, feeds, articles, showModal }) {
   const [url,        setUrl]        = useState('');
   const [title,      setTitle]      = useState('');
   const [cat,        setCat]        = useState('General');
@@ -2034,7 +2046,7 @@ function AddFeedModal({ visible, th, styles, cats, onClose, onAdd, feeds, articl
       showModal && showModal('Already up to date', '"' + (latest.title || latest.link) + '" is already in your list.', [{ text: 'OK' }], '✓');
     } else {
       // Add it
-      onAdd && onAdd.__addArticle && onAdd.__addArticle(feed.id, latest);
+      onAddArticle && onAddArticle(feed.id, latest);
       showModal && showModal('Chapter added', '"' + (latest.title || 'Latest chapter') + '" has been added to ' + feed.title + '.', [{ text: 'OK' }], '✓');
     }
   };

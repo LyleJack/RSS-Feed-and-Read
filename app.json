@@ -11,7 +11,7 @@
     },
     "android": {
       "package": "com.RoyalRoadReaderRewrite.app",
-      "versionCode": 1,
+      "versionCode": 8,
       "adaptiveIcon": {
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundColor": "#0F0E0C"
@@ -29,7 +29,7 @@
       [
         "expo-notifications",
         {
-          "icon": "./assets/android-icon-monochrome.png", // should be notification icon, but none exist atm
+          "icon": "./assets/android-icon-monochrome.png",
           "color": "#E07040",
           "defaultChannel": "default",
           "sounds": []
