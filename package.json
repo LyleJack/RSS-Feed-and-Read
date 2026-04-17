@@ -9,20 +9,20 @@
   },
   "dependencies": {
     "@notifee/react-native": "^9.1.8",
-    "@react-native-async-storage/async-storage": "^1.24.0",
+    "@react-native-async-storage/async-storage": "2.2.0",
     "@react-native-firebase/app": "^21.14.0",
     "@react-native-firebase/messaging": "^21.14.0",
+    "expo": "~55.0.15",
     "expo-background-fetch": "^55.0.14",
     "expo-notifications": "^55.0.19",
-    "react": "19.0.0",
-    "react-native": "0.79.2",
+    "react": "19.2.0",
+    "react-native": "0.83.4",
     "react-native-background-fetch": "^4.2.7",
     "react-native-document-picker": "^9.3.1",
     "react-native-fs": "^2.20.0",
     "react-native-navigation-bar-color": "^2.0.2",
     "react-native-share": "^10.2.1",
-    "react-native-webview": "13.13.5",
-    "expo": "~55.0.15"
+    "react-native-webview": "13.16.0"
   },
   "devDependencies": {
     "@babel/core": "^7.25.0",
