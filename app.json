@@ -22,8 +22,7 @@
         "android.permission.WAKE_LOCK",
         "android.permission.VIBRATE",
         "android.permission.POST_NOTIFICATIONS"
-      ],
-      "googleServicesFile": "./google-services.json"
+      ]
     },
     "plugins": [
       [
