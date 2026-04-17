@@ -12,6 +12,7 @@
     "@react-native-async-storage/async-storage": "^1.24.0",
     "@react-native-firebase/app": "^21.14.0",
     "@react-native-firebase/messaging": "^21.14.0",
+    "expo-notifications": "^55.0.19",
     "react": "19.0.0",
     "react-native": "0.79.2",
     "react-native-background-fetch": "^4.2.7",
