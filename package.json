@@ -20,7 +20,7 @@
     "expo-task-manager": "~55.0.14",
     "react": "19.2.0",
     "react-native": "0.83.4",
-    "react-native-webview": "13.16.0"
+     "react-native-webview": "13.16.0"
   },
   "devDependencies": {
     "@babel/core": "^7.25.0",

@@ -226,6 +226,56 @@ async function fetchFeedItems(feed, timeoutMs = 10000) {
 // This only works in a real APK build (EAS Build), not in Expo Go
 // ============================================================
 const BG_TASK = 'ROYALROADREADER_BG_REFRESH';
+function articleMatches(existing, incoming) {
+  const legacyId = incoming.feedId + '_' + (incoming.link || '').slice(0, 80);
+  return (
+    existing.id === incoming.id ||
+    existing.id === legacyId ||
+    (existing.feedId === incoming.feedId && existing.link && incoming.link && existing.link === incoming.link)
+  );
+}
+
+async function replaceBackgroundNotification(Notifications, count) {
+  try {
+    await Notifications.dismissAllNotificationsAsync();
+  } catch {}
+
+  const lastId = await AsyncStorage.getItem('fp_last_bg_notification').catch(() => null);
+  if (lastId) {
+    try { await Notifications.dismissNotificationAsync(lastId); } catch {}
+    try { await Notifications.cancelScheduledNotificationAsync(lastId); } catch {}
+  }
+
+  try { await Notifications.setBadgeCountAsync(count); } catch {}
+
+  const identifier = await Notifications.scheduleNotificationAsync({
+    content: {
+      title: 'RoyalRoadReader',
+      body: count + ' new chapter' + (count > 1 ? 's' : '') + ' available',
+      data: { screen: 'articles' },
+      sound: false,
+    },
+    trigger: null,
+  });
+
+  await AsyncStorage.setItem('fp_last_bg_notification', identifier).catch(() => {});
+}
+
+async function clearBackgroundNotificationState() {
+  try {
+    const Notifications = require('expo-notifications');
+    await Notifications.dismissAllNotificationsAsync().catch(() => {});
+    try { await Notifications.setBadgeCountAsync(0); } catch {}
+
+    const lastId = await AsyncStorage.getItem('fp_last_bg_notification').catch(() => null);
+    if (lastId) {
+      try { await Notifications.dismissNotificationAsync(lastId); } catch {}
+      try { await Notifications.cancelScheduledNotificationAsync(lastId); } catch {}
+    }
+
+    await AsyncStorage.multiRemove(['fp_last_bg_notification', 'fp_notification_pending_count']).catch(() => {});
+  } catch {}
+}
 
 async function registerBackgroundFetch() {
   try {
@@ -282,31 +332,31 @@ try {
       if (!settings.autoRefresh) return BackgroundFetch.BackgroundFetchResult.NoData;
 
       // Fetch all feeds
-      let newCount = 0;
       const merged = [...articles];
+      const newItems = [];
       for (const feed of feeds) {
         if (feed.paused) continue;
         try {
           const fresh = await fetchFeedItems(feed, 10000);
           for (const a of fresh) {
-            const exists = merged.find(x =>
-              x.id === a.id ||
-              (x.feedId === a.feedId && x.link && a.link && x.link === a.link)
-            );
-            if (!exists) newCount++;
+            const exists = merged.find(x => articleMatches(x, a));
+            if (!exists) {
+              newItems.push(a);
+              merged.push(a);
+            }
           }
         } catch {}
       }
 
-      if (newCount > 0) {
-        await Notifications.scheduleNotificationAsync({
-          content: {
-            title: 'RoyalRoadReader',
-            body: newCount + ' new chapter' + (newCount > 1 ? 's' : '') + ' available',
-            data: { screen: 'articles' },
-          },
-          trigger: null, // send immediately
-        });
+      if (newItems.length > 0) {
+        const mergedSorted = merged.sort((a, b) => (b.pubDate || 0) - (a.pubDate || 0));
+        await AsyncStorage.setItem('fp_articles', JSON.stringify(mergedSorted));
+
+        const pendingRaw = await AsyncStorage.getItem('fp_notification_pending_count');
+        const pendingCount = (parseInt(pendingRaw || '0', 10) || 0) + newItems.length;
+        await AsyncStorage.setItem('fp_notification_pending_count', String(pendingCount));
+
+        await replaceBackgroundNotification(Notifications, pendingCount);
         return BackgroundFetch.BackgroundFetchResult.NewData;
       }
       return BackgroundFetch.BackgroundFetchResult.NoData;
@@ -332,7 +382,7 @@ const Store = {
 export default function App() {
   const [settingsLoaded, setSettingsLoaded] = useState(false);
   const [lastOpenArticle, setLastOpenArticle] = useState(null); // track for unread restoration
-  const [dark, setDark]                   = useState(false);
+  const [dark, setDark]                   = useState(true);
   const [feedSortMode, setFeedSortMode]   = useState('manual');
   const [trueBlack, setTrueBlack]         = useState(false);
   const [tab, setTab]                     = useState('feeds');
@@ -363,6 +413,13 @@ export default function App() {
 
   // Register background fetch & push notifications on mount (only works in APK build)
   useEffect(() => { registerBackgroundFetch().catch(() => {}); }, []);
+  useEffect(() => {
+    clearBackgroundNotificationState().catch(() => {});
+    const sub = AppState.addEventListener('change', state => {
+      if (state === 'active') clearBackgroundNotificationState().catch(() => {});
+    });
+    return () => sub.remove();
+  }, []);
   const feedsRef    = useRef(feeds);
   feedsRef.current  = feeds;
   const thBase = dark ? DARK : LIGHT;
@@ -427,21 +484,13 @@ export default function App() {
   // Android back button
   useEffect(() => {
     const sub = BackHandler.addEventListener('hardwareBackPress', () => {
-      if (!settingsLoaded) {
-    // Show themed black until settings load — avoids white flash on cold start
-    return (
-      <View style={{ flex: 1, backgroundColor: '#000000' }} collapsable={false}>
-        <StatusBar barStyle="light-content" backgroundColor="#000000" translucent={false} />
-      </View>
-    );
-  }
-
-  if (showRRBrowser) { setShowRRBrowser(false); return true; }
+      if (!settingsLoaded) return true;
+      if (showRRBrowser) { setShowRRBrowser(false); return true; }
       if (openArticle)   { setOpenArticle(null);    return true; }
       return false;
     });
     return () => sub.remove();
-  }, [showRRBrowser, openArticle]);
+  }, [settingsLoaded, showRRBrowser, openArticle]);
 
   // Auto-refresh
   useEffect(() => {
@@ -627,6 +676,14 @@ export default function App() {
 
   const sbTop = Platform.OS === 'android' ? (StatusBar.currentHeight || 24) : 44;
   const styles = makeStyles(th);
+
+  if (!settingsLoaded) {
+    return (
+      <View style={{ flex: 1, backgroundColor: '#000000' }} collapsable={false}>
+        <StatusBar barStyle="light-content" backgroundColor="#000000" translucent={false} />
+      </View>
+    );
+  }
 
   if (showRRBrowser) {
     return (
@@ -2493,18 +2550,22 @@ function ChapterReaderView({ url, offlineHtml, th, styles, sbTop, onClose, right
   const [fontSize,    setFontSize]    = useState(initFontSize || 15);
   const [font,        setFont]        = useState(initFont || 'serif');
   const [ready,       setReady]       = useState(false); // JS has run, safe to show
-  const prevUrlRef = useRef(null);
-  // Reset ready state whenever the URL changes to ensure overlay always covers transition
-  if (prevUrlRef.current !== url) {
-    prevUrlRef.current = url;
-    if (ready) setReady(false);  // will cause re-render with overlay shown
-  }
   const [showFonts,   setShowFonts]   = useState(false);
   const [fullscreen,  setFullscreen]  = useState(false);
   const webRef   = useRef(null);
+  const sourceSignature = offlineHtml ? 'offline:' + (url || offlineHtml.slice(0, 80)) : 'live:' + (url || '');
+  const lastSourceRef = useRef(sourceSignature);
+  const sourceChanged = lastSourceRef.current !== sourceSignature;
   const lastTapRef   = useRef(0);
   const [scrollThumb,  setScrollThumb]  = useState(0);   // 0..1 top position
   const [scrollThumbH, setScrollThumbH] = useState(0.15); // 0..1 thumb height
+
+  useEffect(() => {
+    lastSourceRef.current = sourceSignature;
+    setReady(false);
+    setScrollThumb(0);
+    setScrollThumbH(0.15);
+  }, [sourceSignature]);
 
   const handleDoubleTap = () => {
     const now = Date.now();
@@ -2530,8 +2591,6 @@ function ChapterReaderView({ url, offlineHtml, th, styles, sbTop, onClose, right
     return { html };
   }, [offlineHtml, bg, font, fontSize]);
 
-  const fontCss = (FONT_OPTIONS.find(f => f.key === font) || FONT_OPTIONS[0]).css;
-
   const buildJS = (fs, fc, pTitle, nTitle) => {
     const fcss = (FONT_OPTIONS.find(f => f.key === fc) || FONT_OPTIONS[0]).css;
     const esc = s => (s||'').replace(/\\/g,'\\\\').replace(/`/g,'\\`').replace(/\$/g,'\\$').replace(/'/g,"\\'").replace(/"/g,'\\"').replace(/</g,'&lt;').replace(/>/g,'&gt;');
@@ -2544,6 +2603,7 @@ function ChapterReaderView({ url, offlineHtml, th, styles, sbTop, onClose, right
 
   // Hide everything immediately to prevent flash
   document.documentElement.style.visibility='hidden';
+  document.body.style.visibility='hidden';
 
   var chapter =
     document.querySelector('.chapter-content.chapter-inner') ||
@@ -2631,6 +2691,7 @@ function ChapterReaderView({ url, offlineHtml, th, styles, sbTop, onClose, right
 
   // Reveal only after DOM is rebuilt — no flash
   document.documentElement.style.visibility='visible';
+  document.body.style.visibility='visible';
 
   // Signal React Native that we're done
   (function(){var d=document.documentElement;var h=d.scrollHeight-d.clientHeight;var th=h>0?Math.max(0.05,d.clientHeight/d.scrollHeight):0.15;window.ReactNativeWebView.postMessage('scroll:0:'+th.toFixed(3));})();
@@ -2728,10 +2789,11 @@ function ChapterReaderView({ url, offlineHtml, th, styles, sbTop, onClose, right
           </View>
         )}
         <WebView
+          key={sourceSignature}
           ref={webRef}
           source={offlineSource || { uri: url }}
-          style={{ flex: 1, backgroundColor: bg, opacity: ready ? 1 : 0 }}
-          injectedJavaScriptBeforeContentLoaded={offlineHtml ? undefined : 'document.documentElement.style.background="' + bg + '";document.documentElement.style.visibility="hidden";true;'}
+          style={{ flex: 1, backgroundColor: bg, opacity: ready && !sourceChanged ? 1 : 0 }}
+          injectedJavaScriptBeforeContentLoaded={offlineHtml ? undefined : 'document.documentElement.style.background="' + bg + '";document.body.style.background="' + bg + '";document.documentElement.style.visibility="hidden";document.body.style.visibility="hidden";true;'}
           injectedJavaScript={offlineHtml ? undefined : buildJS(fontSize, font, prevTitle, nextTitle)}
           javaScriptEnabled={true}
           onMessage={event => {
@@ -2754,7 +2816,7 @@ function ChapterReaderView({ url, offlineHtml, th, styles, sbTop, onClose, right
         />
 
         {/* Spinner overlay — covers WebView entirely until it's ready, then removed */}
-        {!ready && (
+        {(!ready || sourceChanged) && (
           <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: bg, justifyContent: 'center', alignItems: 'center' }}>
             <ActivityIndicator color={acc} size="large" />
             <Text style={{ color: mut, marginTop: 12, fontSize: 13 }}>Loading chapter...</Text>
